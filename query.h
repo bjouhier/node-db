@@ -43,6 +43,7 @@ class Query : public node::EventEmitter {
         bool async;
         bool cast;
         bool bufferText;
+        bool useCursor;
         v8::Persistent<v8::Function>* cbStart;
         v8::Persistent<v8::Function>* cbExecute;
         v8::Persistent<v8::Function>* cbFinish;

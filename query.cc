@@ -1,5 +1,7 @@
 // Copyright 2011 Mariano Iglesias <mgiglesias@gmail.com>
 #include "./query.h"
+#include "./cursor.h"
+#include <iostream>
 
 v8::Persistent<v8::String> node_db::Query::sySuccess;
 v8::Persistent<v8::String> node_db::Query::syError;
@@ -30,7 +32,7 @@ void node_db::Query::Init(v8::Handle<v8::Object> target, v8::Persistent<v8::Func
 }
 
 node_db::Query::Query(): node::EventEmitter(),
-    connection(NULL), async(true), cast(true), bufferText(false), cbStart(NULL), cbExecute(NULL), cbFinish(NULL) {
+    connection(NULL), async(true), cast(true), bufferText(false), useCursor(false), cbStart(NULL), cbExecute(NULL), cbFinish(NULL) {
 }
 
 node_db::Query::~Query() {
@@ -589,7 +591,6 @@ v8::Handle<v8::Value> node_db::Query::Sql(const v8::Arguments& args) {
 
 v8::Handle<v8::Value> node_db::Query::Execute(const v8::Arguments& args) {
     v8::HandleScope scope;
-
     node_db::Query *query = node::ObjectWrap::Unwrap<node_db::Query>(args.This());
     assert(query);
 
@@ -668,7 +669,7 @@ int node_db::Query::eioExecute(eio_req* eioRequest) {
         request->result = request->query->execute();
         request->query->connection->unlock();
 
-        if (!request->result->isEmpty() && request->result != NULL) {
+        if (!request->result->isEmpty() && request->result != NULL && !request->query->useCursor) {
             request->rows = new std::vector<row_t*>();
             if (request->rows == NULL) {
                 throw node_db::Exception("Could not create buffer for rows");
@@ -737,59 +738,65 @@ int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
 
     execute_request_t *request = static_cast<execute_request_t *>(eioRequest->data);
     assert(request);
-
     if (request->error == NULL && request->result != NULL) {
         v8::Local<v8::Value> argv[3];
         argv[0] = v8::Local<v8::Value>::New(v8::Null());
-
-        bool isEmpty = request->result->isEmpty();
-        if (!isEmpty) {
-            assert(request->rows);
-
-            size_t totalRows = request->rows->size();
-            v8::Local<v8::Array> rows = v8::Array::New(totalRows);
-
-            uint64_t index = 0;
-            for (std::vector<row_t*>::iterator iterator = request->rows->begin(), end = request->rows->end(); iterator != end; ++iterator, index++) {
-                row_t* currentRow = *iterator;
-                v8::Local<v8::Object> row = request->query->row(request->result, currentRow);
-                v8::Local<v8::Value> eachArgv[3];
-
-                eachArgv[0] = row;
-                eachArgv[1] = v8::Number::New(index);
-                eachArgv[2] = v8::Local<v8::Value>::New((index == totalRows - 1) ? v8::True() : v8::False());
-
-                request->query->Emit(syEach, 3, eachArgv);
-
-                rows->Set(index, row);
-            }
-
-            v8::Local<v8::Array> columns = v8::Array::New(request->columnCount);
-            for (uint16_t j = 0; j < request->columnCount; j++) {
-                node_db::Result::Column *currentColumn = request->result->column(j);
-
-                v8::Local<v8::Object> column = v8::Object::New();
-                column->Set(v8::String::New("name"), v8::String::New(currentColumn->getName().c_str()));
-                column->Set(v8::String::New("type"), NODE_CONSTANT(currentColumn->getType()));
-
-                columns->Set(j, column);
-            }
-
-            argv[1] = rows;
-            argv[2] = columns;
-        } else {
-            v8::Local<v8::Object> result = v8::Object::New();
-            result->Set(v8::String::New("id"), v8::Number::New(request->result->insertId()));
-            result->Set(v8::String::New("affected"), v8::Number::New(request->result->affectedCount()));
-            result->Set(v8::String::New("warning"), v8::Number::New(request->result->warningCount()));
-            argv[1] = result;
-        }
-
-        request->query->Emit(sySuccess, !isEmpty ? 2 : 1, &argv[1]);
-
+        int argc = 2;
+ 
+    	if (request->query->useCursor) {
+    		node_db::Cursor cursor = new node_db::Cursor(request->query, request->result);
+	        argv[1] = cursor;
+    	}
+    	else {
+	        bool isEmpty = request->result->isEmpty();
+	        if (!isEmpty) {
+	            assert(request->rows);
+	            argc = 3;
+	
+	            size_t totalRows = request->rows->size();
+	            v8::Local<v8::Array> rows = v8::Array::New(totalRows);
+	
+	            uint64_t index = 0;
+	            for (std::vector<row_t*>::iterator iterator = request->rows->begin(), end = request->rows->end(); iterator != end; ++iterator, index++) {
+	                row_t* currentRow = *iterator;
+	                v8::Local<v8::Object> row = request->query->row(request->result, currentRow);
+	                v8::Local<v8::Value> eachArgv[3];
+	
+	                eachArgv[0] = row;
+	                eachArgv[1] = v8::Number::New(index);
+	                eachArgv[2] = v8::Local<v8::Value>::New((index == totalRows - 1) ? v8::True() : v8::False());
+	
+	                request->query->Emit(syEach, 3, eachArgv);
+	
+	                rows->Set(index, row);
+	            }
+	
+	            v8::Local<v8::Array> columns = v8::Array::New(request->columnCount);
+	            for (uint16_t j = 0; j < request->columnCount; j++) {
+	                node_db::Result::Column *currentColumn = request->result->column(j);
+	
+	                v8::Local<v8::Object> column = v8::Object::New();
+	                column->Set(v8::String::New("name"), v8::String::New(currentColumn->getName().c_str()));
+	                column->Set(v8::String::New("type"), NODE_CONSTANT(currentColumn->getType()));
+	
+	                columns->Set(j, column);
+	            }
+	
+		            argv[1] = rows;
+	            argv[2] = columns;
+	        } else {
+	            v8::Local<v8::Object> result = v8::Object::New();
+	            result->Set(v8::String::New("id"), v8::Number::New(request->result->insertId()));
+	            result->Set(v8::String::New("affected"), v8::Number::New(request->result->affectedCount()));
+	            result->Set(v8::String::New("warning"), v8::Number::New(request->result->warningCount()));
+	            argv[1] = result;
+	        }
+	
+	        request->query->Emit(sySuccess, !isEmpty ? 2 : 1, &argv[1]);
+		}
         if (request->query->cbExecute != NULL && !request->query->cbExecute->IsEmpty()) {
             v8::TryCatch tryCatch;
-            (*(request->query->cbExecute))->Call(request->context, !isEmpty ? 3 : 2, argv);
+            (*(request->query->cbExecute))->Call(request->context, argc, argv);
             if (tryCatch.HasCaught()) {
                 node::FatalException(tryCatch);
             }
@@ -808,8 +815,8 @@ int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
             }
         }
     }
-
-    if (request->query->cbFinish != NULL && !request->query->cbFinish->IsEmpty()) {
+    
+    if (!request->query->useCursor && request->query->cbFinish != NULL && !request->query->cbFinish->IsEmpty()) {
         v8::TryCatch tryCatch;
         (*(request->query->cbFinish))->Call(v8::Context::GetCurrent()->Global(), 0, NULL);
         if (tryCatch.HasCaught()) {
@@ -820,7 +827,8 @@ int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
     ev_unref(EV_DEFAULT_UC);
     request->query->Unref();
 
-    Query::freeRequest(request);
+	if (!request->query->useCursor)
+	    Query::freeRequest(request);
 
     return 0;
 }
@@ -1041,6 +1049,7 @@ v8::Handle<v8::Value> node_db::Query::set(const v8::Arguments& args) {
         ARG_CHECK_OBJECT_ATTR_OPTIONAL_BOOL(options, async);
         ARG_CHECK_OBJECT_ATTR_OPTIONAL_BOOL(options, cast);
         ARG_CHECK_OBJECT_ATTR_OPTIONAL_BOOL(options, bufferText);
+        ARG_CHECK_OBJECT_ATTR_OPTIONAL_BOOL(options, useCursor);
         ARG_CHECK_OBJECT_ATTR_OPTIONAL_FUNCTION(options, start);
         ARG_CHECK_OBJECT_ATTR_OPTIONAL_FUNCTION(options, finish);
 
@@ -1054,6 +1063,10 @@ v8::Handle<v8::Value> node_db::Query::set(const v8::Arguments& args) {
 
         if (options->Has(bufferText_key)) {
             this->bufferText = options->Get(bufferText_key)->IsTrue();
+        }
+
+        if (options->Has(useCursor_key)) {
+            this->useCursor = options->Get(useCursor_key)->IsTrue();
         }
 
         if (options->Has(start_key)) {
