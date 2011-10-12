@@ -12,15 +12,17 @@
 #include <sstream>
 #include <vector>
 #include "./node_defs.h"
+#include "./binding.h"
 #include "./connection.h"
 #include "./exception.h"
 #include "./result.h"
 
 namespace node_db {
 class Query : public node::EventEmitter {
+    friend class Cursor;
     public:
         static void Init(v8::Handle<v8::Object> target, v8::Persistent<v8::FunctionTemplate> constructorTemplate);
-        void setConnection(Connection* connection);
+        void setConnection(Connection* connection, Binding* binding = NULL);
         v8::Handle<v8::Value> set(const v8::Arguments& args);
 
     protected:
@@ -38,6 +40,7 @@ class Query : public node::EventEmitter {
             std::vector<row_t*>* rows;
         };
         Connection* connection;
+        Binding* binding;
         std::ostringstream sql;
         std::vector< v8::Persistent<v8::Value> > values;
         bool async;
@@ -81,7 +84,7 @@ class Query : public node::EventEmitter {
         virtual Result* execute() const throw(Exception&);
         std::string value(v8::Local<v8::Value> value, bool inArray = false, bool escape = true) const throw(Exception&);
 
-
+		v8::Local<v8::Object> createCursor() const;
     private:
         static bool gmtDeltaLoaded;
         static int gmtDelta;

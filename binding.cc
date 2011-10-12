@@ -1,5 +1,6 @@
 // Copyright 2011 Mariano Iglesias <mgiglesias@gmail.com>
 #include "./binding.h"
+#include "./query.h"
 
 v8::Persistent<v8::String> node_db::Binding::syReady;
 v8::Persistent<v8::String> node_db::Binding::syError;
@@ -156,10 +157,10 @@ int node_db::Binding::eioConnectFinished(eio_req* eioRequest) {
     connect_request_t* request = static_cast<connect_request_t*>(eioRequest->data);
     assert(request);
 
+    connectFinished(request);
+
     ev_unref(EV_DEFAULT_UC);
     request->binding->Unref();
-
-    connectFinished(request);
 
     return 0;
 }
@@ -238,7 +239,7 @@ v8::Handle<v8::Value> node_db::Binding::Query(const v8::Arguments& args) {
     }
 
     node_db::Query* queryInstance = node::ObjectWrap::Unwrap<node_db::Query>(query);
-    queryInstance->setConnection(binding->connection);
+    queryInstance->setConnection(binding->connection, binding);
 
     v8::Handle<v8::Value> set = queryInstance->set(args);
     if (!set.IsEmpty()) {
@@ -246,4 +247,11 @@ v8::Handle<v8::Value> node_db::Binding::Query(const v8::Arguments& args) {
     }
 
     return scope.Close(query);
+}
+
+void node_db::Binding::keepAlive(bool keep) {
+	if(keep)
+		this->Ref();
+	else
+		this->Unref();
 }
