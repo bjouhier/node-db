@@ -8,13 +8,14 @@
 #include "./node_defs.h"
 #include "./connection.h"
 #include "./exception.h"
-#include "./query.h"
+//#include "./query.h"
 
 namespace node_db {
 class Binding : public node::EventEmitter {
     public:
         Connection* connection;
 
+		void keepAlive(bool keep);
     protected:
         struct connect_request_t {
             v8::Persistent<v8::Object> context;

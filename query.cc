@@ -29,6 +29,8 @@ void node_db::Query::Init(v8::Handle<v8::Object> target, v8::Persistent<v8::Func
     sySuccess = NODE_PERSISTENT_SYMBOL("success");
     syError = NODE_PERSISTENT_SYMBOL("error");
     syEach = NODE_PERSISTENT_SYMBOL("each");
+    //
+    Cursor::Init(target);
 }
 
 node_db::Query::Query(): node::EventEmitter(),
@@ -49,10 +51,20 @@ node_db::Query::~Query() {
     if (this->cbFinish != NULL) {
         node::cb_destroy(this->cbFinish);
     }
+    if (this->binding != NULL) {
+    	this->binding->keepAlive(false);
+    }
 }
 
-void node_db::Query::setConnection(node_db::Connection* connection) {
+void node_db::Query::setConnection(node_db::Connection* connection, node_db::Binding* binding) {
     this->connection = connection;
+	// eventually release old binding
+    if (this->binding != NULL)
+    	this->binding->keepAlive(false); 
+    this->binding = binding;
+    // make sure binding is not garbage collected too soon
+    if (this->binding != NULL)
+    	this->binding->keepAlive(true); 
 }
 
 v8::Handle<v8::Value> node_db::Query::Select(const v8::Arguments& args) {
@@ -744,8 +756,11 @@ int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
         int argc = 2;
  
     	if (request->query->useCursor) {
-    		node_db::Cursor cursor = new node_db::Cursor(request->query, request->result);
-	        argv[1] = cursor;
+    		v8::Local<v8::Object> cursor = request->query->createCursor();
+			argv[1] = cursor;
+		    node_db::Cursor* cursorInstance = node::ObjectWrap::Unwrap<node_db::Cursor>(cursor);
+		    cursorInstance->setQuery(request->query);
+		    cursorInstance->setResult(request->result);
     	}
     	else {
 	        bool isEmpty = request->result->isEmpty();
@@ -827,8 +842,13 @@ int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
     ev_unref(EV_DEFAULT_UC);
     request->query->Unref();
 
-	if (!request->query->useCursor)
+	if (!request->query->useCursor) {
 	    Query::freeRequest(request);
+	} else {
+		// do not delete request->result as it's referenced by cursor
+		request->context.Dispose();
+		delete request;
+	}
 
     return 0;
 }
@@ -1486,3 +1506,8 @@ std::string node_db::Query::fromDate(const double timeStamp) const throw(node_db
     return date;
 }
 
+v8::Local<v8::Object> node_db::Query::createCursor() const {
+    v8::Local<v8::Object> cursor(
+        node_db::Cursor::constructorTemplate->GetFunction()->NewInstance());
+    return cursor;
+}
