@@ -34,7 +34,7 @@ void node_db::Query::Init(v8::Handle<v8::Object> target, v8::Persistent<v8::Func
 }
 
 node_db::Query::Query(): node::EventEmitter(),
-    connection(NULL), async(true), cast(true), bufferText(false), useCursor(false), cbStart(NULL), cbExecute(NULL), cbFinish(NULL) {
+    connection(NULL), binding(NULL), async(true), cast(true), bufferText(false), useCursor(false), cbStart(NULL), cbExecute(NULL), cbFinish(NULL) {
 }
 
 node_db::Query::~Query() {
