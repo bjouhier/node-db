@@ -79,7 +79,7 @@ v8::Handle<v8::Value> node_db::Cursor::Next(const v8::Arguments& args) {
     return scope.Close(v8::Undefined());
 }
 
-int node_db::Cursor::eioNext(eio_req* eioRequest) {
+void node_db::Cursor::eioNext(eio_req* eioRequest) {
     execute_request_t *request = static_cast<execute_request_t *>(eioRequest->data);
     assert(request);
     assert(request->cursor);
@@ -137,7 +137,7 @@ int node_db::Cursor::eioNext(eio_req* eioRequest) {
         request->error = exception.what();
     }
 	
-    return 0;
+    //return 0;
 }
 
 int node_db::Cursor::eioNextFinished(eio_req* eioRequest) {
@@ -162,7 +162,7 @@ int node_db::Cursor::eioNextFinished(eio_req* eioRequest) {
 	            eachArgv[1] = v8::Number::New(request->result->index());
 	            eachArgv[2] = v8::Local<v8::Value>::New(request->result->hasNext() ? v8::True() : v8::False());
 	
-	            request->query->Emit(Query::syEach, 3, eachArgv);
+	            //request->query->Emit(Query::syEach, 3, eachArgv);
 		
 	            v8::Local<v8::Array> columns = v8::Array::New(request->columnCount);
 	            for (uint16_t j = 0; j < request->columnCount; j++) {
@@ -185,7 +185,7 @@ int node_db::Cursor::eioNextFinished(eio_req* eioRequest) {
 	            argv[1] = result;
 	        }
 
-	        request->query->Emit(Query::sySuccess, !isEmpty ? 2 : 1, &argv[1]);
+	        //request->query->Emit(Query::sySuccess, !isEmpty ? 2 : 1, &argv[1]);
 
 		}
 		else {
@@ -203,7 +203,7 @@ int node_db::Cursor::eioNextFinished(eio_req* eioRequest) {
         v8::Local<v8::Value> argv[1];
         argv[0] = v8::String::New(request->error != NULL ? request->error : "(unknown error)");
 
-        request->query->Emit(Query::syError, 1, argv);
+        //request->query->Emit(Query::syError, 1, argv);
 
         if (request->cbNext != NULL && !request->cbNext->IsEmpty()) {
             v8::TryCatch tryCatch;
