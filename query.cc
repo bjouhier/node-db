@@ -3,9 +3,6 @@
 #include "./cursor.h"
 #include <iostream>
 
-v8::Persistent<v8::String> node_db::Query::sySuccess;
-v8::Persistent<v8::String> node_db::Query::syError;
-v8::Persistent<v8::String> node_db::Query::syEach;
 bool node_db::Query::gmtDeltaLoaded = false;
 int node_db::Query::gmtDelta;
 
@@ -26,14 +23,10 @@ void node_db::Query::Init(v8::Handle<v8::Object> target, v8::Persistent<v8::Func
     NODE_ADD_PROTOTYPE_METHOD(constructorTemplate, "sql", Sql);
     NODE_ADD_PROTOTYPE_METHOD(constructorTemplate, "execute", Execute);
 
-    sySuccess = NODE_PERSISTENT_SYMBOL("success");
-    syError = NODE_PERSISTENT_SYMBOL("error");
-    syEach = NODE_PERSISTENT_SYMBOL("each");
-    //
     Cursor::Init(target);
 }
 
-node_db::Query::Query(): node::EventEmitter(),
+node_db::Query::Query(): node_db::EventEmitter(),
     connection(NULL), binding(NULL), async(true), cast(true), bufferText(false), useCursor(false), cbStart(NULL), cbExecute(NULL), cbFinish(NULL) {
 }
 
@@ -606,10 +599,6 @@ v8::Handle<v8::Value> node_db::Query::Execute(const v8::Arguments& args) {
     node_db::Query *query = node::ObjectWrap::Unwrap<node_db::Query>(args.This());
     assert(query);
 
-    if (!query->connection->isAlive(false)) {
-        THROW_EXCEPTION("Can't execute a query without being connected")
-    }
-
     if (args.Length() > 0) {
         v8::Handle<v8::Value> set = query->set(args);
         if (!set.IsEmpty()) {
@@ -645,6 +634,10 @@ v8::Handle<v8::Value> node_db::Query::Execute(const v8::Arguments& args) {
         }
     }
 
+    if (!query->connection->isAlive(false)) {
+        THROW_EXCEPTION("Can't execute a query without being connected")
+    }
+
     execute_request_t *request = new execute_request_t();
     if (request == NULL) {
         THROW_EXCEPTION("Could not create EIO request")
@@ -672,7 +665,12 @@ v8::Handle<v8::Value> node_db::Query::Execute(const v8::Arguments& args) {
     return scope.Close(v8::Undefined());
 }
 
-int node_db::Query::eioExecute(eio_req* eioRequest) {
+#if NODE_VERSION_AT_LEAST(0, 5, 0)
+void
+#else
+int
+#endif
+node_db::Query::eioExecute(eio_req* eioRequest) {
     execute_request_t *request = static_cast<execute_request_t *>(eioRequest->data);
     assert(request);
 
@@ -741,8 +739,9 @@ int node_db::Query::eioExecute(eio_req* eioRequest) {
         Query::freeRequest(request, false);
         request->error = exception.what();
     }
-
+#if !NODE_VERSION_AT_LEAST(0, 5, 0)
     return 0;
+#endif
 }
 
 int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
@@ -763,52 +762,51 @@ int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
 		    cursorInstance->setResult(request->result);
     	}
     	else {
-	        bool isEmpty = request->result->isEmpty();
-	        if (!isEmpty) {
-	            assert(request->rows);
-	            argc = 3;
-	
-	            size_t totalRows = request->rows->size();
-	            v8::Local<v8::Array> rows = v8::Array::New(totalRows);
-	
-	            uint64_t index = 0;
-	            for (std::vector<row_t*>::iterator iterator = request->rows->begin(), end = request->rows->end(); iterator != end; ++iterator, index++) {
-	                row_t* currentRow = *iterator;
-	                v8::Local<v8::Object> row = request->query->row(request->result, currentRow);
-	                v8::Local<v8::Value> eachArgv[3];
-	
-	                eachArgv[0] = row;
-	                eachArgv[1] = v8::Number::New(index);
-	                eachArgv[2] = v8::Local<v8::Value>::New((index == totalRows - 1) ? v8::True() : v8::False());
-	
-	                request->query->Emit(syEach, 3, eachArgv);
-	
-	                rows->Set(index, row);
-	            }
-	
-	            v8::Local<v8::Array> columns = v8::Array::New(request->columnCount);
-	            for (uint16_t j = 0; j < request->columnCount; j++) {
-	                node_db::Result::Column *currentColumn = request->result->column(j);
-	
-	                v8::Local<v8::Object> column = v8::Object::New();
-	                column->Set(v8::String::New("name"), v8::String::New(currentColumn->getName().c_str()));
-	                column->Set(v8::String::New("type"), NODE_CONSTANT(currentColumn->getType()));
-	
-	                columns->Set(j, column);
-	            }
-	
-		            argv[1] = rows;
-	            argv[2] = columns;
-	        } else {
-	            v8::Local<v8::Object> result = v8::Object::New();
-	            result->Set(v8::String::New("id"), v8::Number::New(request->result->insertId()));
-	            result->Set(v8::String::New("affected"), v8::Number::New(request->result->affectedCount()));
-	            result->Set(v8::String::New("warning"), v8::Number::New(request->result->warningCount()));
-	            argv[1] = result;
-	        }
-	
-	        request->query->Emit(sySuccess, !isEmpty ? 2 : 1, &argv[1]);
-		}
+            bool isEmpty = request->result->isEmpty();
+            if (!isEmpty) {
+                assert(request->rows);
+
+                size_t totalRows = request->rows->size();
+                v8::Local<v8::Array> rows = v8::Array::New(totalRows);
+
+                uint64_t index = 0;
+                for (std::vector<row_t*>::iterator iterator = request->rows->begin(), end = request->rows->end(); iterator != end; ++iterator, index++) {
+                    row_t* currentRow = *iterator;
+                    v8::Local<v8::Object> row = request->query->row(request->result, currentRow);
+                    v8::Local<v8::Value> eachArgv[3];
+
+                    eachArgv[0] = row;
+                    eachArgv[1] = v8::Number::New(index);
+                    eachArgv[2] = v8::Local<v8::Value>::New((index == totalRows - 1) ? v8::True() : v8::False());
+
+                    request->query->Emit("each", 3, eachArgv);
+
+                    rows->Set(index, row);
+                }
+
+                v8::Local<v8::Array> columns = v8::Array::New(request->columnCount);
+                for (uint16_t j = 0; j < request->columnCount; j++) {
+                    node_db::Result::Column *currentColumn = request->result->column(j);
+
+                    v8::Local<v8::Object> column = v8::Object::New();
+                    column->Set(v8::String::New("name"), v8::String::New(currentColumn->getName().c_str()));
+                    column->Set(v8::String::New("type"), NODE_CONSTANT(currentColumn->getType()));
+
+                    columns->Set(j, column);
+                }
+
+                argv[1] = rows;
+                argv[2] = columns;
+            } else {
+                v8::Local<v8::Object> result = v8::Object::New();
+                result->Set(v8::String::New("id"), v8::Number::New(request->result->insertId()));
+                result->Set(v8::String::New("affected"), v8::Number::New(request->result->affectedCount()));
+                result->Set(v8::String::New("warning"), v8::Number::New(request->result->warningCount()));
+                argv[1] = result;
+            }
+
+            request->query->Emit("success", !isEmpty ? 2 : 1, &argv[1]);
+        }
         if (request->query->cbExecute != NULL && !request->query->cbExecute->IsEmpty()) {
             v8::TryCatch tryCatch;
             (*(request->query->cbExecute))->Call(request->context, argc, argv);
@@ -820,7 +818,7 @@ int node_db::Query::eioExecuteFinished(eio_req* eioRequest) {
         v8::Local<v8::Value> argv[1];
         argv[0] = v8::String::New(request->error != NULL ? request->error : "(unknown error)");
 
-        request->query->Emit(syError, 1, argv);
+        request->query->Emit("error", 1, argv);
 
         if (request->query->cbExecute != NULL && !request->query->cbExecute->IsEmpty()) {
             v8::TryCatch tryCatch;
@@ -900,7 +898,7 @@ void node_db::Query::executeAsync(execute_request_t* request) {
                     eachArgv[1] = v8::Number::New(index);
                     eachArgv[2] = v8::Local<v8::Value>::New(request->result->hasNext() ? v8::True() : v8::False());
 
-                    this->Emit(syEach, 3, eachArgv);
+                    this->Emit("each", 3, eachArgv);
 
                     rows->Set(index++, jsRow);
                 }
@@ -919,7 +917,7 @@ void node_db::Query::executeAsync(execute_request_t* request) {
                 argv[1] = result;
             }
 
-            this->Emit(sySuccess, !isEmpty ? 2 : 1, &argv[1]);
+            this->Emit("success", !isEmpty ? 2 : 1, &argv[1]);
 
             if (this->cbExecute != NULL && !this->cbExecute->IsEmpty()) {
                 v8::TryCatch tryCatch;
@@ -935,7 +933,7 @@ void node_db::Query::executeAsync(execute_request_t* request) {
         v8::Local<v8::Value> argv[1];
         argv[0] = v8::String::New(request->error != NULL ? exception.what() : "(unknown error)");
 
-        this->Emit(syError, 1, argv);
+        this->Emit("error", 1, argv);
 
         if (this->cbExecute != NULL && !this->cbExecute->IsEmpty()) {
             v8::TryCatch tryCatch;
@@ -1137,8 +1135,10 @@ std::string node_db::Query::fieldName(v8::Local<v8::Value> value) const throw(no
                 v8::Local<v8::Object> currentObject = currentValue->ToObject();
                 v8::Local<v8::String> escapeKey = v8::String::New("escape");
                 v8::Local<v8::String> valueKey = v8::String::New("value");
+                v8::Local<v8::String> precisionKey = v8::String::New("precision");
                 v8::Local<v8::Value> optionValue;
                 bool escape = false;
+                int precision = -1;
 
                 if (!currentObject->Has(valueKey)) {
                     throw node_db::Exception("The \"value\" option for the select field object must be specified");
@@ -1152,11 +1152,19 @@ std::string node_db::Query::fieldName(v8::Local<v8::Value> value) const throw(no
                     escape = optionValue->IsTrue();
                 }
 
+                if (currentObject->Has(precisionKey)) {
+                    optionValue = currentObject->Get(precisionKey);
+                    if (!optionValue->IsNumber() || optionValue->IntegerValue() < 0) {
+                        throw new node_db::Exception("Specify a number equal or greater than 0 for precision");
+                    }
+                    precision = optionValue->IntegerValue();
+                }
+
                 if (j > 0) {
                     buffer += ',';
                 }
 
-                buffer += this->value(currentObject->Get(valueKey), false, escape);
+                buffer += this->value(currentObject->Get(valueKey), false, escape, precision);
             } else {
                 if (j > 0) {
                     buffer += ',';
@@ -1262,7 +1270,7 @@ v8::Local<v8::Object> node_db::Query::row(node_db::Result* result, row_t* curren
                         value = v8::String::New(currentValue, currentLength)->ToInteger();
                         break;
                     case node_db::Result::Column::NUMBER:
-                        value = v8::Number::New(::atof(currentValue));
+                        value = v8::String::New(currentValue, currentLength)->ToNumber();
                         break;
                     case node_db::Result::Column::TIME:
                         {
@@ -1409,7 +1417,7 @@ std::string node_db::Query::parseQuery() const throw(node_db::Exception&) {
     return parsed;
 }
 
-std::string node_db::Query::value(v8::Local<v8::Value> value, bool inArray, bool escape) const throw(node_db::Exception&) {
+std::string node_db::Query::value(v8::Local<v8::Value> value, bool inArray, bool escape, int precision) const throw(node_db::Exception&) {
     std::ostringstream currentStream;
 
     if (value->IsNull()) {
@@ -1438,7 +1446,19 @@ std::string node_db::Query::value(v8::Local<v8::Value> value, bool inArray, bool
         v8::Local<v8::Object> object = value->ToObject();
         v8::Handle<v8::String> valueKey = v8::String::New("value");
         v8::Handle<v8::String> escapeKey = v8::String::New("escape");
+
         if (object->Has(valueKey)) {
+            v8::Handle<v8::String> precisionKey = v8::String::New("precision");
+            int precision = -1;
+
+            if (object->Has(precisionKey)) {
+                v8::Local<v8::Value> optionValue = object->Get(precisionKey);
+                if (!optionValue->IsNumber() || optionValue->IntegerValue() < 0) {
+                    throw new node_db::Exception("Specify a number equal or greater than 0 for precision");
+                }
+                precision = optionValue->IntegerValue();
+            }
+
             bool innerEscape = true;
             if (object->Has(escapeKey)) {
                 v8::Local<v8::Value> escapeValue = object->Get(escapeKey);
@@ -1447,7 +1467,7 @@ std::string node_db::Query::value(v8::Local<v8::Value> value, bool inArray, bool
                 }
                 innerEscape = escapeValue->IsTrue();
             }
-            currentStream << this->value(object->Get(valueKey), false, innerEscape);
+            currentStream << this->value(object->Get(valueKey), false, innerEscape, precision);
         } else {
             v8::Handle<v8::String> sqlKey = v8::String::New("sql");
             if (!object->Has(sqlKey) || !object->Get(sqlKey)->IsFunction()) {
@@ -1466,8 +1486,15 @@ std::string node_db::Query::value(v8::Local<v8::Value> value, bool inArray, bool
         }
     } else if (value->IsBoolean()) {
         currentStream << (value->IsTrue() ? '1' : '0');
+    } else if (value->IsUint32() || value->IsInt32() || value->NumberValue() == value->IntegerValue()) {
+        currentStream << value->IntegerValue();
     } else if (value->IsNumber()) {
-        currentStream << value->ToNumber()->Value();
+        if (precision == -1) {
+            v8::String::Utf8Value currentString(value->ToString());
+            currentStream << *currentString;
+        } else {
+            currentStream << std::fixed << std::setprecision(precision) << value->NumberValue();
+        }
     } else if (value->IsString()) {
         v8::String::Utf8Value currentString(value->ToString());
         std::string string = *currentString;

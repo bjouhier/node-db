@@ -44,7 +44,7 @@ class Cursor : public node::ObjectWrap {
 
         static v8::Handle<v8::Value> Next(const v8::Arguments& args);
         //
-        static int eioNext(eio_req* eioRequest);
+        static void eioNext(eio_req* eioRequest);
         static int eioNextFinished(eio_req* eioRequest);
 		//
         static void freeRequest(execute_request_t* request, bool freeAll = true);

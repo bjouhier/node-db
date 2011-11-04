@@ -5,20 +5,22 @@
 #include <stdlib.h>
 #include <node.h>
 #include <node_buffer.h>
-#include <node_events.h>
+#include <node_version.h>
 #include <algorithm>
 #include <cctype>
+#include <iomanip>
 #include <string>
 #include <sstream>
 #include <vector>
 #include "./node_defs.h"
 #include "./binding.h"
 #include "./connection.h"
+#include "./events.h"
 #include "./exception.h"
 #include "./result.h"
 
 namespace node_db {
-class Query : public node::EventEmitter {
+class Query : public EventEmitter {
     friend class Cursor;
     public:
         static void Init(v8::Handle<v8::Object> target, v8::Persistent<v8::FunctionTemplate> constructorTemplate);
@@ -50,9 +52,6 @@ class Query : public node::EventEmitter {
         v8::Persistent<v8::Function>* cbStart;
         v8::Persistent<v8::Function>* cbExecute;
         v8::Persistent<v8::Function>* cbFinish;
-        static v8::Persistent<v8::String> syError;
-        static v8::Persistent<v8::String> sySuccess;
-        static v8::Persistent<v8::String> syEach;
 
         Query();
         ~Query();
@@ -71,7 +70,13 @@ class Query : public node::EventEmitter {
         static v8::Handle<v8::Value> Delete(const v8::Arguments& args);
         static v8::Handle<v8::Value> Sql(const v8::Arguments& args);
         static v8::Handle<v8::Value> Execute(const v8::Arguments& args);
-        static int eioExecute(eio_req* eioRequest);
+        static
+#if NODE_VERSION_AT_LEAST(0, 5, 0)
+        void
+#else
+        int
+#endif
+        eioExecute(eio_req* eioRequest);
         static int eioExecuteFinished(eio_req* eioRequest);
         void executeAsync(execute_request_t* request);
         static void freeRequest(execute_request_t* request, bool freeAll = true);
@@ -82,7 +87,7 @@ class Query : public node::EventEmitter {
         virtual std::string parseQuery() const throw(Exception&);
         virtual std::vector<std::string::size_type> placeholders(std::string* parsed) const throw(Exception&);
         virtual Result* execute() const throw(Exception&);
-        std::string value(v8::Local<v8::Value> value, bool inArray = false, bool escape = true) const throw(Exception&);
+        std::string value(v8::Local<v8::Value> value, bool inArray = false, bool escape = true, int precision = -1) const throw(Exception&);
 
 		v8::Local<v8::Object> createCursor() const;
     private:
