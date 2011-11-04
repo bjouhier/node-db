@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <node.h>
 #include <node_buffer.h>
-//#include <node_events.h>
+#include <node_events.h>
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -44,7 +44,7 @@ class Cursor : public node::ObjectWrap {
 
         static v8::Handle<v8::Value> Next(const v8::Arguments& args);
         //
-        static void eioNext(eio_req* eioRequest);
+        static int eioNext(eio_req* eioRequest);
         static int eioNextFinished(eio_req* eioRequest);
 		//
         static void freeRequest(execute_request_t* request, bool freeAll = true);

@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <node.h>
 #include <node_buffer.h>
-//#include <node_events.h>
+#include <node_events.h>
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -18,7 +18,7 @@
 #include "./result.h"
 
 namespace node_db {
-class Query : public node::ObjectWrap {
+class Query : public node::EventEmitter {
     friend class Cursor;
     public:
         static void Init(v8::Handle<v8::Object> target, v8::Persistent<v8::FunctionTemplate> constructorTemplate);
@@ -71,7 +71,7 @@ class Query : public node::ObjectWrap {
         static v8::Handle<v8::Value> Delete(const v8::Arguments& args);
         static v8::Handle<v8::Value> Sql(const v8::Arguments& args);
         static v8::Handle<v8::Value> Execute(const v8::Arguments& args);
-        static void eioExecute(eio_req* eioRequest);
+        static int eioExecute(eio_req* eioRequest);
         static int eioExecuteFinished(eio_req* eioRequest);
         void executeAsync(execute_request_t* request);
         static void freeRequest(execute_request_t* request, bool freeAll = true);

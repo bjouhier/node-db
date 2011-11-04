@@ -5,7 +5,7 @@
 v8::Persistent<v8::String> node_db::Binding::syReady;
 v8::Persistent<v8::String> node_db::Binding::syError;
 
-node_db::Binding::Binding(): node::ObjectWrap(), connection(NULL), cbConnect(NULL) {
+node_db::Binding::Binding(): node::EventEmitter(), connection(NULL), cbConnect(NULL) {
 }
 
 node_db::Binding::~Binding() {
@@ -122,11 +122,11 @@ void node_db::Binding::connectFinished(connect_request_t* request) {
         argv[0] = v8::Local<v8::Value>::New(v8::Null());
         argv[1] = server;
 
-        //request->binding->Emit(syReady, 1, &argv[1]);
+        request->binding->Emit(syReady, 1, &argv[1]);
     } else {
         argv[0] = v8::String::New(request->error != NULL ? request->error : "(unknown error)");
 
-        //request->binding->Emit(syError, 1, argv);
+        request->binding->Emit(syError, 1, argv);
     }
 
     if (request->binding->cbConnect != NULL && !request->binding->cbConnect->IsEmpty()) {
@@ -142,13 +142,13 @@ void node_db::Binding::connectFinished(connect_request_t* request) {
     delete request;
 }
 
-void node_db::Binding::eioConnect(eio_req* eioRequest) {
+int node_db::Binding::eioConnect(eio_req* eioRequest) {
     connect_request_t* request = static_cast<connect_request_t*>(eioRequest->data);
     assert(request);
 
     connect(request);
 
-    //return 0;
+    return 0;
 }
 
 int node_db::Binding::eioConnectFinished(eio_req* eioRequest) {
