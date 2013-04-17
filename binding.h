@@ -40,10 +40,10 @@ class Binding : public EventEmitter {
 #else
         int
 #endif
-        eioConnect(eio_req* req);
+        eioConnect(uv_work_t* req);
         static void connect(connect_request_t* request);
         static void connectFinished(connect_request_t* request);
-        static int eioConnectFinished(eio_req* eioRequest);
+        static void eioConnectFinished(uv_work_t* eioRequest, int dummy);
         virtual v8::Handle<v8::Value> set(const v8::Local<v8::Object> options) = 0;
         virtual v8::Persistent<v8::Object> createQuery() const = 0;
 };

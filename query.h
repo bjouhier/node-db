@@ -76,8 +76,8 @@ class Query : public EventEmitter {
 #else
         int
 #endif
-        eioExecute(eio_req* eioRequest);
-        static int eioExecuteFinished(eio_req* eioRequest);
+        eioExecute(uv_work_t* eioRequest);
+        static void eioExecuteFinished(uv_work_t* eioRequest, int dummy);
         void executeAsync(execute_request_t* request);
         static void freeRequest(execute_request_t* request, bool freeAll = true);
         std::string fieldName(v8::Local<v8::Value> value) const throw(Exception&);

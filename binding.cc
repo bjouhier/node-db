@@ -84,8 +84,10 @@ v8::Handle<v8::Value> node_db::Binding::Connect(const v8::Arguments& args) {
 
     if (async) {
         request->binding->Ref();
-        eio_custom(eioConnect, EIO_PRI_DEFAULT, eioConnectFinished, request);
-        ev_ref(EV_DEFAULT_UC);
+        uv_work_t *work = new uv_work_t;
+        work->data = request;
+        uv_queue_work(uv_default_loop(), work, eioConnect, eioConnectFinished);
+        uv_default_loop()->active_handles++;
     } else {
         connect(request);
         connectFinished(request);
@@ -141,7 +143,7 @@ void
 #else
 int
 #endif
-node_db::Binding::eioConnect(eio_req* eioRequest) {
+node_db::Binding::eioConnect(uv_work_t* eioRequest) {
     connect_request_t* request = static_cast<connect_request_t*>(eioRequest->data);
     assert(request);
 
@@ -151,7 +153,7 @@ node_db::Binding::eioConnect(eio_req* eioRequest) {
 #endif
 }
 
-int node_db::Binding::eioConnectFinished(eio_req* eioRequest) {
+void node_db::Binding::eioConnectFinished(uv_work_t* eioRequest, int dummy) {
     v8::HandleScope scope;
 
     connect_request_t* request = static_cast<connect_request_t*>(eioRequest->data);
@@ -159,10 +161,8 @@ int node_db::Binding::eioConnectFinished(eio_req* eioRequest) {
 
     connectFinished(request);
 
-    ev_unref(EV_DEFAULT_UC);
+    uv_default_loop()->active_handles--;
     request->binding->Unref();
-
-    return 0;
 }
 
 v8::Handle<v8::Value> node_db::Binding::Disconnect(const v8::Arguments& args) {

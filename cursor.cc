@@ -73,13 +73,15 @@ v8::Handle<v8::Value> node_db::Cursor::Next(const v8::Arguments& args) {
 
     cursor->Ref();
     
-    eio_custom(eioNext, EIO_PRI_DEFAULT, eioNextFinished, request);
-    ev_ref(EV_DEFAULT_UC);
+    uv_work_t *work = new uv_work_t;
+    work->data = request;
+    uv_queue_work(uv_default_loop(), work, eioNext, eioNextFinished);
+    uv_default_loop()->active_handles++;
 
     return scope.Close(v8::Undefined());
 }
 
-void node_db::Cursor::eioNext(eio_req* eioRequest) {
+void node_db::Cursor::eioNext(uv_work_t* eioRequest) {
     execute_request_t *request = static_cast<execute_request_t *>(eioRequest->data);
     assert(request);
     assert(request->cursor);
@@ -138,7 +140,7 @@ void node_db::Cursor::eioNext(eio_req* eioRequest) {
     }
 }
 
-int node_db::Cursor::eioNextFinished(eio_req* eioRequest) {
+void node_db::Cursor::eioNextFinished(uv_work_t* eioRequest, int dummy) {
     v8::HandleScope scope;
 
     execute_request_t *request = static_cast<execute_request_t *>(eioRequest->data);
@@ -212,12 +214,10 @@ int node_db::Cursor::eioNextFinished(eio_req* eioRequest) {
         }
     }
     
-    ev_unref(EV_DEFAULT_UC);
+    uv_default_loop()->active_handles--;
     request->cursor->Unref();
 
     Cursor::freeRequest(request);
-
-    return 0;
 }
 
 void node_db::Cursor::freeRequest(execute_request_t* request, bool freeAll) {
